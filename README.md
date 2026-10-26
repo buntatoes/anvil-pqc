@@ -12,20 +12,20 @@
 
 Version 0.1.1.
 
-This is the groundwork for doing the TLS key exchange in-house some day. I wrote it from the specs: NIST FIPS 203 for ML-KEM, FIPS 202 for SHA-3, RFC 7748 for X25519, and draft-ietf-tls-ecdhe-mlkem-03 for the hybrid.
+This is the post-quantum and hybrid key-exchange library for Anvil. I wrote it from the specs: NIST FIPS 203 for ML-KEM, FIPS 202 for SHA-3, RFC 7748 for X25519, and draft-ietf-tls-ecdhe-mlkem-03 for the hybrid.
 
-## Does the browser use it?
+## How the browser uses it
 
-Not yet. On Linux the browser's TLS runs on the system OpenSSL, and OpenSSL does the key exchange itself. anvil-net asks OpenSSL for X25519MLKEM768 first and shows the group that was actually picked on `anvil://security`, but none of the code in this crate runs during a page load today. On Windows, Schannel picks the groups and the browser doesn't change that.
+`anvil-net` links this crate alongside `anvil-cipher`:
 
-Everything here is meant for a future in-house TLS 1.3 client:
-
-| Piece | Used by the browser today? |
+| Piece | How `anvil-net` uses it |
 | --- | --- |
-| `mlkem` (ML-KEM-768) | No |
-| `x25519` | No |
-| `hybrid` (X25519MLKEM768 shares and secret) | No |
-| `keccak` (SHA3-256, SHA3-512, SHAKE128, SHAKE256) | No |
+| `mlkem` (ML-KEM-768) | Key generation, encapsulation, and decapsulation inside `pqc_tls13` |
+| `x25519` | Classical X25519 shares and fallback shared secret inside `pqc_tls13` |
+| `hybrid` (`X25519MLKEM768` shares and secret) | TLS 1.3 `key_share` extension builder/parser, 64-byte combined shared secret, and pre-connection self-test (`verify_pqc_hybrid_self_test`) |
+| `keccak` (SHA3-256, SHA3-512, SHAKE128, SHAKE256) | ML-KEM internals, TLS 1.3 transcript hashing (`transcript_sha3_256`), and `sha3-256-` Subresource Integrity checks (`policy::sri_sha3_256_token`) |
+
+For live socket handshakes, Linux uses the system OpenSSL (offering `X25519MLKEM768` first via `SSL_set1_groups_list`) and Windows uses Schannel, while `anvil-net::pqc_tls13` runs the in-house `X25519MLKEM768` + `HKDF-SHA256` + `AES-256-GCM` key-exchange and TLS 1.3 key-schedule self-test before sessions open.
 
 ## What it does
 
@@ -44,7 +44,7 @@ From draft-ietf-tls-ecdhe-mlkem-03, sections 3 and 4:
 - Shared secret, 64 bytes: the ML-KEM shared secret (32), then the X25519 shared secret (32). ML-KEM goes first for this group, the reverse of the other hybrids in the draft.
 - The server runs the FIPS 203 section 7.2 check on the client's encapsulation key. The client checks the ciphertext length. Both sides refuse an all-zero X25519 result. In TLS each of those is an illegal_parameter alert; here it's an `Error`.
 
-The 64-byte secret is the (EC)DHE input to the TLS 1.3 key schedule. The key schedule isn't in this crate.
+The 64-byte secret is the (EC)DHE input to the TLS 1.3 key schedule (`anvil-net::pqc_tls13::Tls13HandshakeKeys`).
 
 ## How it was checked
 
@@ -76,12 +76,12 @@ The browser is [anvil-browser](https://github.com/buntatoes/anvil-browser) (Apac
 
 | Repository | What it is |
 | --- | --- |
-| [anvil-cipher](https://github.com/buntatoes/anvil-cipher) | AES-128, AES-256, CTR, AES-256-GCM |
+| [anvil-cipher](https://github.com/buntatoes/anvil-cipher) | AES-128, AES-256, CTR, AES-256-GCM, SHA-256, HMAC-SHA256, HKDF-SHA256 |
 | [anvil-compress](https://github.com/buntatoes/anvil-compress) | DEFLATE, zlib, gzip |
 | [anvil-hpack](https://github.com/buntatoes/anvil-hpack) | HPACK header compression for HTTP/2 |
-| [anvil-image](https://github.com/buntatoes/anvil-image) | PNG, JPEG, GIF, WebP, ICO, BMP, PPM |
+| [anvil-image](https://github.com/buntatoes/anvil-image) | PNG, JPEG, GIF, WebP (`VP8L`), ICO, BMP, PPM |
 | [anvil-json](https://github.com/buntatoes/anvil-json) | JSON |
-| [anvil-pqc](https://github.com/buntatoes/anvil-pqc) | ML-KEM-768, X25519, X25519MLKEM768, SHA-3 (not used by the browser yet) |
+| [anvil-pqc](https://github.com/buntatoes/anvil-pqc) | ML-KEM-768, X25519, X25519MLKEM768, SHA-3 |
 | [anvil-ttf](https://github.com/buntatoes/anvil-ttf) | TrueType and OpenType (`glyf`, `CFF `, `kern`, `GPOS`) |
 | [anvil-gpu](https://github.com/buntatoes/anvil-gpu) | Compositor passes for boxes, shadows, gradients, and NV12, on the CPU or a GPU |
 | [anvil-video](https://github.com/buntatoes/anvil-video) | CPU frames and PCM/ADPCM audio in a small MP4 container |
