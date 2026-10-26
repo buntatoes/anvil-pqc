@@ -24,13 +24,14 @@ const RHO: [u32; 25] = {
 
 /// One bit of the round-constant LFSR, FIPS 202 Algorithm 5.
 const fn rc(t: usize) -> u64 {
-    if t.is_multiple_of(255) {
+    let steps = t % 255;
+    if steps == 0 {
         return 1;
     }
     // R as 8 bits, R[0] in the low bit.
     let mut r: u16 = 1;
     let mut i = 1;
-    while i <= t % 255 {
+    while i <= steps {
         r <<= 1; // R = 0 || R; the old R[7] is now R[8].
         let r8 = (r >> 8) & 1;
         r ^= r8; // R[0]

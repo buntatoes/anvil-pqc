@@ -226,7 +226,9 @@ fn sample_ntt(rho: &[u8; 32], j: u8, i: u8) -> Poly {
     let mut buf = [0u8; 168];
     while count < N {
         xof.squeeze(&mut buf);
-        for c in buf.as_chunks::<3>().0 {
+        // Three bytes give two 12-bit candidates; 168 is a multiple of 3.
+        for start in (0..buf.len()).step_by(3) {
+            let c = &buf[start..start + 3];
             let d1 = u16::from(c[0]) | (u16::from(c[1] & 0x0f) << 8);
             let d2 = u16::from(c[1] >> 4) | (u16::from(c[2]) << 4);
             if u32::from(d1) < Q && count < N {

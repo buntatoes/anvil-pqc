@@ -51,7 +51,7 @@ fn junk_encapsulation_keys() {
         let mut b = rng.bytes(n);
         // Half the time, clear the top bit of each 12-bit value so every
         // value is below q, the key passes the modulus check, and gets used.
-        if n == mlkem::ENCAPSULATION_KEY_LEN && rng.next().is_multiple_of(2) {
+        if n == mlkem::ENCAPSULATION_KEY_LEN && rng.next() & 1 == 0 {
             for i in (0..1152).step_by(3) {
                 b[i + 1] &= 0xf7;
                 b[i + 2] &= 0x7f;
