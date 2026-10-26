@@ -68,7 +68,7 @@ The 64-byte secret is the (EC)DHE input to the TLS 1.3 key schedule (`anvil-net:
 cargo test
 ```
 
-Rust 2024 edition, Rust 1.85.1 or newer. No crates.io dependencies. The only unsafe code is the one `BCryptGenRandom` call on Windows, in `src/sys_random.rs`.
+Rust 2024 edition, Rust 1.99.1 or newer. No crates.io dependencies. The only unsafe code is the one `BCryptGenRandom` call on Windows, in `src/sys_random.rs`.
 
 ## The other repositories
 

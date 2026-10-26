@@ -6,6 +6,7 @@
 name = "anvil-pqc"
 version = "0.1.1"
 edition = "2024"
+rust-version = "1.99.1"
 authors = ["Buntato <324143321+buntatoes@users.noreply.github.com>"]
 license = "MPL-2.0"
 description = "ML-KEM-768, X25519, and the X25519MLKEM768 hybrid, with SHA-3 built in."
