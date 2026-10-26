@@ -9,16 +9,21 @@
 //! - [`keccak`]: SHA3-256, SHA3-512, SHAKE128, and SHAKE256 from FIPS 202,
 //!   which ML-KEM needs.
 //!
-//! Everything is std only with no unsafe code. Randomness comes from
-//! `/dev/urandom` on Unix; elsewhere use the `*_with` / `*_from_seed`
-//! functions and supply your own random bytes.
+//! Everything is std only. Randomness comes from `/dev/urandom` on Unix and
+//! from `BCryptGenRandom` on Windows; elsewhere use the `*_with` /
+//! `*_from_seed` functions and supply your own random bytes. The only unsafe
+//! code is that one Windows call, in its own module.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 pub mod hybrid;
 pub mod keccak;
 pub mod mlkem;
 pub mod x25519;
+
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod sys_random;
 
 /// Things that can go wrong. None of them say anything about secret data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,9 +82,16 @@ pub fn fill_random(buf: &mut [u8]) -> Result<(), Error> {
         .map_err(|_| Error::NoRandomness)
 }
 
-/// Fill `buf` from the system random source. There is no std-only source on
-/// this platform yet, so this always fails; use the seeded functions.
-#[cfg(not(unix))]
+/// Fill `buf` from the system random source, `BCryptGenRandom` with the
+/// system's preferred generator.
+#[cfg(windows)]
+pub fn fill_random(buf: &mut [u8]) -> Result<(), Error> {
+    sys_random::fill(buf)
+}
+
+/// Fill `buf` from the system random source. There is none on this platform
+/// yet, so this always fails; use the seeded functions.
+#[cfg(not(any(unix, windows)))]
 pub fn fill_random(_buf: &mut [u8]) -> Result<(), Error> {
     Err(Error::NoRandomness)
 }

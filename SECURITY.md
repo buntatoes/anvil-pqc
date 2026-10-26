@@ -24,4 +24,4 @@ Do not put the details in a public issue.
 - The code tries to avoid secret-dependent branches and lookups, but its timing hasn't been measured.
 - Nothing here has been audited. The browser doesn't use this crate for real connections yet.
 
-Version 0.1.0 is current.
+Version 0.1.1 is current.

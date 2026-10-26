@@ -10,7 +10,7 @@
   </p>
 </div>
 
-Version 0.1.0.
+Version 0.1.1.
 
 This is the groundwork for doing the TLS key exchange in-house some day. I wrote it from the specs: NIST FIPS 203 for ML-KEM, FIPS 202 for SHA-3, RFC 7748 for X25519, and draft-ietf-tls-ecdhe-mlkem-03 for the hybrid.
 
@@ -33,7 +33,7 @@ Everything here is meant for a future in-house TLS 1.3 client:
 - `x25519`: the X25519 function, the public key from a private key, and a shared secret that refuses the all-zero result.
 - `hybrid`: the X25519MLKEM768 group for TLS 1.3, codepoint 4588 (0x11EC). See below for exactly what it follows.
 - `keccak`: SHA3-256, SHA3-512, SHAKE128, and SHAKE256. ML-KEM needs them and anvil-cipher doesn't have them, so they live here.
-- `fill_random` reads `/dev/urandom` on Unix. Every function that needs randomness also has a version that takes the random bytes from you (`keygen_from_seed`, `encapsulate_with`, `client_share_from_seed`, `server_respond_with`).
+- `fill_random` reads `/dev/urandom` on Unix and calls `BCryptGenRandom` (the system's preferred generator) on Windows. Every function that needs randomness also has a version that takes the random bytes from you (`keygen_from_seed`, `encapsulate_with`, `client_share_from_seed`, `server_respond_with`).
 
 ## The hybrid, exactly
 
@@ -59,7 +59,7 @@ The 64-byte secret is the (EC)DHE input to the TLS 1.3 key schedule. The key sch
 - Only ML-KEM-768. No ML-KEM-512 or ML-KEM-1024, and no SecP256r1MLKEM768 or SecP384r1MLKEM1024.
 - Secret-dependent branches and table lookups are avoided, the ciphertext comparison and key choice in decapsulation use masks, and the X25519 ladder swaps with masks. Nobody has measured the timing, and the compiler is free to undo some of it, so don't treat this as hardened against side channels.
 - Secrets are overwritten when dropped, but the compiler may keep copies elsewhere.
-- No system random source on Windows yet. `fill_random` returns `Error::NoRandomness` there; use the seeded functions.
+- On platforms other than Unix and Windows there is no system random source, and `fill_random` returns `Error::NoRandomness`; use the seeded functions there.
 - Not audited.
 
 ## Build
@@ -68,7 +68,7 @@ The 64-byte secret is the (EC)DHE input to the TLS 1.3 key schedule. The key sch
 cargo test
 ```
 
-Rust 2024 edition, Rust 1.85.1 or newer. No crates.io dependencies and no unsafe code.
+Rust 2024 edition, Rust 1.85.1 or newer. No crates.io dependencies. The only unsafe code is the one `BCryptGenRandom` call on Windows, in `src/sys_random.rs`.
 
 ## The other repositories
 
