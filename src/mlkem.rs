@@ -299,8 +299,8 @@ fn kpke_keygen(d: &[u8; 32]) -> (Vec<u8>, Vec<u8>) {
     let mut ek = Vec::with_capacity(ENCAPSULATION_KEY_LEN);
     for i in 0..K {
         let mut t = e[i];
-        for j in 0..K {
-            poly_add(&mut t, &multiply_ntts(&a[i][j], &s[j]));
+        for (j, sj) in s.iter().enumerate() {
+            poly_add(&mut t, &multiply_ntts(&a[i][j], sj));
         }
         byte_encode(&t, 12, &mut ek);
     }
@@ -343,13 +343,13 @@ fn kpke_encrypt(ek: &[u8], m: &[u8; 32], r: &[u8; 32]) -> Vec<u8> {
     }
     let mut c = Vec::with_capacity(CIPHERTEXT_LEN);
     // u = NTT^-1(A^T ∘ y) + e1
-    for i in 0..K {
+    for (i, e1i) in e1.iter().enumerate() {
         let mut u = [0u16; N];
-        for j in 0..K {
-            poly_add(&mut u, &multiply_ntts(&a[j][i], &y[j]));
+        for (j, yj) in y.iter().enumerate() {
+            poly_add(&mut u, &multiply_ntts(&a[j][i], yj));
         }
         ntt_inverse(&mut u);
-        poly_add(&mut u, &e1[i]);
+        poly_add(&mut u, e1i);
         let mut comp = [0u16; N];
         for (o, &x) in comp.iter_mut().zip(&u) {
             *o = compress(x, DU);
