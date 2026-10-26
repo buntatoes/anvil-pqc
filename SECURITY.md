@@ -24,4 +24,4 @@ Do not put the details in a public issue.
 - The code tries to avoid secret-dependent branches and lookups, but its timing hasn't been measured.
 - Nothing here has been audited. `anvil-net` links this crate for `pqc_tls13` (`X25519MLKEM768` hybrid key shares, TLS 1.3 key-schedule self-testing, and `sha3-256-` Subresource Integrity checks).
 
-Version 0.1.1 is current.
+Version 0.1.2 is current.
