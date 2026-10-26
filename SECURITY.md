@@ -22,6 +22,6 @@ Do not put the details in a public issue.
 ## What isn't
 
 - The code tries to avoid secret-dependent branches and lookups, but its timing hasn't been measured.
-- Nothing here has been audited. The browser doesn't use this crate for real connections yet.
+- Nothing here has been audited. `anvil-net` links this crate for `pqc_tls13` (`X25519MLKEM768` hybrid key shares, TLS 1.3 key-schedule self-testing, and `sha3-256-` Subresource Integrity checks).
 
 Version 0.1.1 is current.
