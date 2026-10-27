@@ -25,4 +25,4 @@ Do not put the details in a public issue.
 - The AVX2 code is only used on x86_64 CPUs that report AVX2. It has only been tested on such CPUs; elsewhere the portable code runs.
 - Nothing here has been audited. `anvil-net` links this crate for `pqc_tls13` (`X25519MLKEM768` hybrid key shares, TLS 1.3 key-schedule self-testing, and `sha3-256-` Subresource Integrity checks).
 
-Version 0.1.2 is current.
+Version 0.2.0 is current.

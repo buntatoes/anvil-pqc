@@ -10,7 +10,7 @@
   </p>
 </div>
 
-Version 0.1.1.
+Version 0.2.0.
 
 This is the post-quantum and hybrid key-exchange library for Anvil. I wrote it from the specs: NIST FIPS 203 for ML-KEM, FIPS 202 for SHA-3, RFC 7748 for X25519, and draft-ietf-tls-ecdhe-mlkem-03 for the hybrid.
 
