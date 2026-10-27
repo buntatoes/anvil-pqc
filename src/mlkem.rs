@@ -12,6 +12,7 @@
 //! The ciphertext comparison in decapsulation and the choice between the real
 //! and the rejection key are done with masks, not `if`.
 
+use crate::accel::{self, Job};
 use crate::keccak::{sha3_256, sha3_512, shake128, shake256_bytes};
 use crate::{Error, ct_eq, ct_select};
 
@@ -36,7 +37,7 @@ pub const SEED_LEN: usize = 64;
 
 const DK_PKE_LEN: usize = 384 * K;
 
-type Poly = [u16; N];
+pub(crate) type Poly = [u16; N];
 
 /// BitRev7 from section 2.3.
 const fn bitrev7(i: usize) -> usize {
@@ -63,7 +64,7 @@ const fn pow_mod(base: u32, mut exp: usize) -> u32 {
 }
 
 /// ζ^BitRev7(i) mod q with ζ = 17, used by Algorithms 9 and 10 (Appendix A).
-const ZETAS: [u16; 128] = {
+pub(crate) const ZETAS: [u16; 128] = {
     let mut out = [0u16; 128];
     let mut i = 0;
     while i < 128 {
@@ -74,7 +75,7 @@ const ZETAS: [u16; 128] = {
 };
 
 /// ζ^(2 BitRev7(i) + 1) mod q, used by Algorithm 11 (Appendix A).
-const GAMMAS: [u16; 128] = {
+pub(crate) const GAMMAS: [u16; 128] = {
     let mut out = [0u16; 128];
     let mut i = 0;
     while i < 128 {
@@ -96,8 +97,15 @@ fn subq(a: u16, b: u16) -> u16 {
     ((u32::from(a) + Q - u32::from(b)) % Q) as u16
 }
 
-/// Algorithm 9.
+/// Algorithm 9, on AVX2 when the CPU has it.
 fn ntt(f: &mut Poly) {
+    if !accel::run(Job::Ntt(f)) {
+        ntt_portable(f);
+    }
+}
+
+/// Algorithm 9, the portable reference.
+fn ntt_portable(f: &mut Poly) {
     let mut i = 1;
     let mut len = 128;
     while len >= 2 {
@@ -116,8 +124,15 @@ fn ntt(f: &mut Poly) {
     }
 }
 
-/// Algorithm 10.
+/// Algorithm 10, on AVX2 when the CPU has it.
 fn ntt_inverse(f: &mut Poly) {
+    if !accel::run(Job::NttInverse(f)) {
+        ntt_inverse_portable(f);
+    }
+}
+
+/// Algorithm 10, the portable reference.
+fn ntt_inverse_portable(f: &mut Poly) {
     let mut i = 127;
     let mut len = 2;
     while len <= 128 {
@@ -139,8 +154,17 @@ fn ntt_inverse(f: &mut Poly) {
     }
 }
 
-/// Algorithms 11 and 12.
+/// Algorithms 11 and 12, on AVX2 when the CPU has it.
 fn multiply_ntts(f: &Poly, g: &Poly) -> Poly {
+    let mut h = [0u16; N];
+    if !accel::run(Job::MultiplyNtts(f, g, &mut h)) {
+        h = multiply_ntts_portable(f, g);
+    }
+    h
+}
+
+/// Algorithms 11 and 12, the portable reference.
+fn multiply_ntts_portable(f: &Poly, g: &Poly) -> Poly {
     let mut h = [0u16; N];
     for i in 0..128 {
         let (a0, a1, b0, b1) = (f[2 * i], f[2 * i + 1], g[2 * i], g[2 * i + 1]);
@@ -151,12 +175,26 @@ fn multiply_ntts(f: &Poly, g: &Poly) -> Poly {
 }
 
 fn poly_add(a: &mut Poly, b: &Poly) {
+    if !accel::run(Job::PolyAdd(a, b)) {
+        poly_add_portable(a, b);
+    }
+}
+
+fn poly_add_portable(a: &mut Poly, b: &Poly) {
     for (x, y) in a.iter_mut().zip(b) {
         *x = addq(*x, *y);
     }
 }
 
 fn poly_sub(a: &Poly, b: &Poly) -> Poly {
+    let mut out = [0u16; N];
+    if !accel::run(Job::PolySub(a, b, &mut out)) {
+        out = poly_sub_portable(a, b);
+    }
+    out
+}
+
+fn poly_sub_portable(a: &Poly, b: &Poly) -> Poly {
     let mut out = [0u16; N];
     for i in 0..N {
         out[i] = subq(a[i], b[i]);
@@ -678,5 +716,152 @@ mod tests {
             assert_eq!(b.len(), 32 * d);
             assert_eq!(byte_decode(&b, d), f);
         }
+    }
+
+    // The AVX2 code against the portable code, function by function. On a
+    // CPU without AVX2 these say so on stderr and check only the fallback.
+
+    struct XorShift(u64);
+
+    impl XorShift {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+        fn coeff(&mut self) -> u16 {
+            (self.next() % u64::from(Q)) as u16
+        }
+        fn poly(&mut self) -> Poly {
+            let mut f = [0u16; N];
+            for c in f.iter_mut() {
+                *c = self.coeff();
+            }
+            f
+        }
+    }
+
+    /// Fixed boundary cases, then `n` random polynomials.
+    fn inputs(seed: u64, n: usize) -> Vec<Poly> {
+        let top = (Q - 1) as u16;
+        let mut out = vec![[0u16; N], [top; N], [1u16; N]];
+        let mut alt = [0u16; N];
+        let mut ramp = [0u16; N];
+        for i in 0..N {
+            alt[i] = if i % 2 == 0 { top } else { 0 };
+            ramp[i] = (i as u32 * 13 % Q) as u16;
+        }
+        out.push(alt);
+        out.push(ramp);
+        let mut rng = XorShift(seed);
+        out.extend((0..n).map(|_| rng.poly()));
+        out
+    }
+
+    /// Runs `job` and says whether the AVX2 code took it.
+    fn on_avx2(job: Job<'_>) -> bool {
+        let took = accel::run(job);
+        assert_eq!(took, accel::avx2_active());
+        if !took {
+            eprintln!("no AVX2 on this CPU: comparing the portable code with itself");
+        }
+        took
+    }
+
+    #[test]
+    fn avx2_ntt_matches_portable() {
+        for f in inputs(1, 20_000) {
+            let (mut want, mut got) = (f, f);
+            ntt_portable(&mut want);
+            if !on_avx2(Job::Ntt(&mut got)) {
+                return;
+            }
+            assert_eq!(got, want, "{f:?}");
+        }
+    }
+
+    #[test]
+    fn avx2_ntt_inverse_matches_portable() {
+        for f in inputs(2, 20_000) {
+            let (mut want, mut got) = (f, f);
+            ntt_inverse_portable(&mut want);
+            if !on_avx2(Job::NttInverse(&mut got)) {
+                return;
+            }
+            assert_eq!(got, want, "{f:?}");
+        }
+    }
+
+    #[test]
+    fn avx2_multiply_ntts_matches_portable() {
+        let fs = inputs(3, 20_000);
+        let gs = inputs(4, 20_000);
+        for (f, g) in fs.iter().zip(gs.iter().rev()).chain(fs.iter().zip(&gs)) {
+            let want = multiply_ntts_portable(f, g);
+            let mut got = [0u16; N];
+            if !on_avx2(Job::MultiplyNtts(f, g, &mut got)) {
+                return;
+            }
+            assert_eq!(got, want);
+        }
+    }
+
+    /// Every product a * b with a, b in 0..q, through the AVX2 pair
+    /// multiplication, then the sums and the gamma term with both halves set.
+    #[test]
+    fn avx2_multiply_ntts_every_product() {
+        let mut f = [0u16; N];
+        let mut g = [0u16; N];
+        let mut got = [0u16; N];
+        for a in 0..Q as u16 {
+            // (a, 0) * (b, b') puts a*b in the even output and a*b' in the
+            // odd one, so each call covers 256 values of b.
+            for base in (0..Q as usize).step_by(N) {
+                for (k, b) in g.iter_mut().enumerate() {
+                    *b = (base + k).min(Q as usize - 1) as u16;
+                }
+                for i in 0..128 {
+                    f[2 * i] = a;
+                    f[2 * i + 1] = 0;
+                }
+                let want = multiply_ntts_portable(&f, &g);
+                if !on_avx2(Job::MultiplyNtts(&f, &g, &mut got)) {
+                    return;
+                }
+                assert_eq!(got, want, "a = {a}");
+            }
+            for i in 0..128 {
+                f[2 * i + 1] = Q as u16 - 1 - a;
+            }
+            let want = multiply_ntts_portable(&f, &g);
+            accel::run(Job::MultiplyNtts(&f, &g, &mut got));
+            assert_eq!(got, want, "a = {a}");
+        }
+    }
+
+    #[test]
+    fn avx2_poly_add_and_sub_match_portable() {
+        let fs = inputs(5, 20_000);
+        let gs = inputs(6, 20_000);
+        for (f, g) in fs.iter().zip(gs.iter().rev()).chain(fs.iter().zip(&gs)) {
+            let (mut want, mut got) = (*f, *f);
+            poly_add_portable(&mut want, g);
+            if !on_avx2(Job::PolyAdd(&mut got, g)) {
+                return;
+            }
+            assert_eq!(got, want);
+            let want = poly_sub_portable(f, g);
+            let mut got = [0u16; N];
+            accel::run(Job::PolySub(f, g, &mut got));
+            assert_eq!(got, want);
+        }
+    }
+
+    #[test]
+    fn portable_only_keeps_the_avx2_code_out() {
+        let mut f = [1u16; N];
+        accel::portable_only(|| assert!(!accel::run(Job::Ntt(&mut f))));
+        assert_eq!(f, [1u16; N]);
     }
 }

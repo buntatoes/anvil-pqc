@@ -11,11 +11,22 @@
 //!
 //! Everything is std only. Randomness comes from `/dev/urandom` on Unix and
 //! from `BCryptGenRandom` on Windows; elsewhere use the `*_with` /
-//! `*_from_seed` functions and supply your own random bytes. The only unsafe
-//! code is that one Windows call, in its own module.
+//! `*_from_seed` functions and supply your own random bytes.
+//!
+//! On x86_64 CPUs with AVX2, the ML-KEM hot loops run on AVX2 and give the
+//! same bytes as the portable code, which stays the default and the
+//! reference; see [`accel`].
+//!
+//! There are two unsafe blocks: the Windows random call, in its own module,
+//! and the call into the AVX2 code in `accel::run`, made right after the CPU
+//! check. Each has its own `#[allow(unsafe_code)]`; everything else is under
+//! `#![deny(unsafe_code)]`.
 
 #![deny(unsafe_code)]
 
+pub mod accel;
+#[cfg(target_arch = "x86_64")]
+mod avx2;
 pub mod hybrid;
 pub mod keccak;
 pub mod mlkem;

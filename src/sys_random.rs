@@ -2,8 +2,9 @@
 // Copyright (c) 2026 Buntato
 //! The Windows system random source: `BCryptGenRandom` from `bcrypt.dll`.
 //!
-//! This is the only module allowed to use `unsafe`, and it has one unsafe
-//! call. The rest of the crate is built with `#![deny(unsafe_code)]`.
+//! This module has one unsafe call. The only other one in the crate is the
+//! call into the AVX2 code in `accel::run`; everything else is built with
+//! `#![deny(unsafe_code)]`.
 
 use crate::Error;
 
