@@ -33,6 +33,7 @@ For live socket handshakes, Linux uses the system OpenSSL (offering `X25519MLKEM
 - `x25519`: the X25519 function, the public key from a private key, and a shared secret that refuses the all-zero result.
 - `hybrid`: the X25519MLKEM768 group for TLS 1.3, codepoint 4588 (0x11EC). See below for exactly what it follows.
 - `keccak`: SHA3-256, SHA3-512, SHAKE128, and SHAKE256. ML-KEM needs them and anvil-cipher doesn't have them, so they live here.
+- `accel`: on x86_64 CPUs with AVX2, ML-KEM's hot loops run on AVX2, with the portable code as the default and the reference. See below.
 - `fill_random` reads `/dev/urandom` on Unix and calls `BCryptGenRandom` (the system's preferred generator) on Windows. Every function that needs randomness also has a version that takes the random bytes from you (`keygen_from_seed`, `encapsulate_with`, `client_share_from_seed`, `server_respond_with`).
 
 ## The hybrid, exactly
@@ -54,6 +55,24 @@ The 64-byte secret is the (EC)DHE input to the TLS 1.3 key schedule (`anvil-net:
 - Round trips, implicit rejection, bad keys, and seeded runs of junk input. Junk gives an error or a key, never a panic.
 - By hand, outside the tests, against OpenSSL 3.5.7: keys from the same seed are byte-for-byte the same, encapsulation with the same randomness gives the same ciphertext and secret, and ML-KEM-768 and X25519MLKEM768 both work in both directions (OpenSSL encapsulates and this crate decapsulates, and the other way round).
 
+## AVX2
+
+On x86_64 CPUs that have AVX2, these parts of ML-KEM run on AVX2:
+
+- the NTT and its inverse (FIPS 203 Algorithms 9 and 10),
+- multiplication in the NTT domain (Algorithms 11 and 12),
+- polynomial addition and subtraction,
+- sampling the matrix A (Algorithm 7): eight of its nine SHAKE128 streams go four at a time, with four Keccak permutations side by side.
+
+The CPU is checked once at run time and the answer is kept. Without AVX2, on 32-bit x86, and on every other CPU, everything runs on the portable code. That code is the default and the reference: the AVX2 code has to give the same bytes, and the tests check that.
+
+- The tests compare each AVX2 function with its portable twin on boundary cases and tens of thousands of seeded random inputs, including every product a·b mod q in the pair multiplication. The ACVP vectors and seeded runs of the whole API (key generation, encapsulation, decapsulation, the hybrid) run both ways.
+- `accel::portable_only(|| ...)` runs a closure with the AVX2 code switched off on that thread. `accel::avx2_active()` says which code the thread is using.
+- Not on AVX2: X25519, single Keccak permutations (SHA3-256, SHA3-512, SHAKE256, and so the PRF and the hashes in ML-KEM), the ninth matrix entry, compression, and byte encoding.
+- The AVX2 code follows the same rules as the portable code: no branches, divisions, or memory lookups that depend on secret data. Reductions use unsigned minimums, and lane layouts are fixed. A rough two-class timing check on one machine found no difference for either path; that's a smoke test, not a proof.
+- Measured on one shared x86_64 virtual machine, release build, median of five runs: key generation about 1.7 times as fast, encapsulation about 1.8, decapsulation about 1.85, and the NTT about 15. Other machines will differ.
+- So far it has only been tested on CPUs that have AVX2. The portable path is tested on the same machine with `portable_only`, not on a CPU without AVX2.
+
 ## Limits
 
 - Only ML-KEM-768. No ML-KEM-512 or ML-KEM-1024, and no SecP256r1MLKEM768 or SecP384r1MLKEM1024.
@@ -68,7 +87,7 @@ The 64-byte secret is the (EC)DHE input to the TLS 1.3 key schedule (`anvil-net:
 cargo test
 ```
 
-Rust 2024 edition, Rust 1.99.1 or newer. No crates.io dependencies. The only unsafe code is the one `BCryptGenRandom` call on Windows, in `src/sys_random.rs`.
+Rust 2024 edition, Rust 1.99.1 or newer. No crates.io dependencies. There are two unsafe blocks: the `BCryptGenRandom` call on Windows, in `src/sys_random.rs`, and the call into the AVX2 code in `src/accel.rs`, made right after the CPU check says AVX2 is there. The AVX2 code itself is safe Rust.
 
 ## The other repositories
 
