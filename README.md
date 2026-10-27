@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>anvil-pqc</h1>
+  <h1>Anvil PQC</h1>
   <p>Post-quantum key exchange: ML-KEM-768, X25519, and the X25519MLKEM768 hybrid.</p>
   <p>
     <img src="https://img.shields.io/badge/release-v.02-e8c37a?style=flat-square" alt="v.02" />
@@ -32,7 +32,7 @@ For live socket handshakes, Linux uses the system OpenSSL (offering `X25519MLKEM
 - `mlkem`: ML-KEM-768 key generation, encapsulation, and decapsulation (FIPS 203 Algorithms 16 to 21). Keys come in through `EncapsulationKey::from_bytes` and `DecapsulationKey::from_bytes`, which run the section 7 input checks (length and modulus check for the encapsulation key, length and hash check for the decapsulation key). Decapsulation checks the ciphertext length and uses implicit rejection: a ciphertext that doesn't re-encrypt to itself gives `J(z || c)` instead of an error, and the caller can't tell the difference.
 - `x25519`: the X25519 function, the public key from a private key, and a shared secret that refuses the all-zero result.
 - `hybrid`: the X25519MLKEM768 group for TLS 1.3, codepoint 4588 (0x11EC). See below for exactly what it follows.
-- `keccak`: SHA3-256, SHA3-512, SHAKE128, and SHAKE256. ML-KEM needs them and anvil-cipher doesn't have them, so they live here.
+- `keccak`: SHA3-256, SHA3-512, SHAKE128, and SHAKE256. ML-KEM needs them and `anvil-cipher` doesn't have them, so they live here.
 - `accel`: on x86_64 CPUs with AVX2, ML-KEM's hot loops run on AVX2, with the portable code as the default and the reference. See below.
 - `fill_random` reads `/dev/urandom` on Unix and calls `BCryptGenRandom` (the system's preferred generator) on Windows. Every function that needs randomness also has a version that takes the random bytes from you (`keygen_from_seed`, `encapsulate_with`, `client_share_from_seed`, `server_respond_with`).
 
