@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0-OR-Commercial
 // Copyright (c) 2026 Buntato
 //! The X25519MLKEM768 hybrid group for TLS 1.3, following
 //! draft-ietf-tls-ecdhe-mlkem-03 (November 2025), sections 3 and 4.

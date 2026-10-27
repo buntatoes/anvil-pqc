@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0-OR-Commercial
 // Copyright (c) 2026 Buntato
 //! The AVX2 code and the portable code give the same bytes through the
 //! public API. On a CPU without AVX2 both runs use the portable code, and

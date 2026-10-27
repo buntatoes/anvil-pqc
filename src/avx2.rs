@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0-OR-Commercial
 // Copyright (c) 2026 Buntato
 //! The AVX2 versions of the ML-KEM hot loops and of four Keccak permutations
 //! at once. Every function here gives exactly what its portable twin gives;

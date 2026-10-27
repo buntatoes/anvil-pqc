@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: LicenseRef-PolyForm-Noncommercial-1.0.0-OR-Commercial
 // Copyright (c) 2026 Buntato
 //! NIST ACVP vectors for ML-KEM-768. See tests/data/acvp-mlkem768.txt for
 //! where they come from.
