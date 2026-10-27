@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2026 Buntato
-//! The AVX2 versions of the ML-KEM hot loops. Every function here gives exactly what its portable twin gives;
-//! the tests in `mlkem` check that on random and boundary inputs.
+//! The AVX2 versions of the ML-KEM hot loops and of four Keccak permutations
+//! at once. Every function here gives exactly what its portable twin gives;
+//! the tests in `mlkem` and `keccak` check that on random and boundary inputs.
 //!
 //! Everything is safe code. The only way in is `run`, which `accel::run`
 //! calls after checking that the CPU has AVX2.
 //!
 //! Coefficients stay fully reduced, in 0..q, the same as in the portable
 //! code, so no lazy reduction can leave a different representative behind.
-//! Nothing here branches on, or indexes memory by, a coefficient: the reductions use unsigned minimum, and every lane layout is fixed.
+//! Nothing here branches on, or indexes memory by, a coefficient or a state
+//! word: the reductions use unsigned minimum, and every lane layout is fixed.
 
 use crate::accel::Job;
+use crate::keccak::{RHO, ROUND_CONSTANTS};
 use crate::mlkem::{GAMMAS, Poly, ZETAS};
 use std::arch::x86_64::*;
 
@@ -79,6 +82,7 @@ pub(crate) fn run(job: Job<'_>) {
         Job::MultiplyNtts(f, g, out) => multiply_ntts(f, g, out),
         Job::PolyAdd(a, b) => poly_add(a, b),
         Job::PolySub(a, b, out) => poly_sub(a, b, out),
+        Job::KeccakX4(states) => keccak_f1600_x4(states),
     }
 }
 
@@ -371,5 +375,68 @@ fn poly_sub(a: &Poly, b: &Poly, out: &mut Poly) {
     let pairs = a.as_chunks::<16>().0.iter().zip(b.as_chunks::<16>().0);
     for (o, (x, y)) in out.as_chunks_mut::<16>().0.iter_mut().zip(pairs) {
         store(sub(load(x), load(y)), o);
+    }
+}
+
+#[target_feature(enable = "avx2")]
+fn rotate_left(v: __m256i, n: u32) -> __m256i {
+    // A shift by 64 gives 0, so n = 0 leaves v as it is.
+    let left = _mm256_sllv_epi64(v, _mm256_set1_epi64x(i64::from(n)));
+    let right = _mm256_srlv_epi64(v, _mm256_set1_epi64x(64 - i64::from(n)));
+    _mm256_or_si256(left, right)
+}
+
+/// Keccak-p[1600, 24] on four states, one per 64-bit lane, step for step as
+/// `keccak::keccak_f1600`.
+#[target_feature(enable = "avx2")]
+fn keccak_f1600_x4(states: &mut [[u64; 25]; 4]) {
+    let mut a = [_mm256_setzero_si256(); 25];
+    for (w, lane) in a.iter_mut().enumerate() {
+        let s = |k: usize| states[k][w] as i64;
+        *lane = _mm256_set_epi64x(s(3), s(2), s(1), s(0));
+    }
+    for rc in ROUND_CONSTANTS {
+        // θ
+        let mut c = [_mm256_setzero_si256(); 5];
+        for x in 0..5 {
+            c[x] = _mm256_xor_si256(
+                _mm256_xor_si256(
+                    _mm256_xor_si256(a[x], a[x + 5]),
+                    _mm256_xor_si256(a[x + 10], a[x + 15]),
+                ),
+                a[x + 20],
+            );
+        }
+        for x in 0..5 {
+            let d = _mm256_xor_si256(c[(x + 4) % 5], rotate_left(c[(x + 1) % 5], 1));
+            for y in 0..5 {
+                a[x + 5 * y] = _mm256_xor_si256(a[x + 5 * y], d);
+            }
+        }
+        // ρ and π
+        let mut b = [_mm256_setzero_si256(); 25];
+        for x in 0..5 {
+            for y in 0..5 {
+                let src = (x + 3 * y) % 5 + 5 * x;
+                b[x + 5 * y] = rotate_left(a[src], RHO[src]);
+            }
+        }
+        // χ: andnot(p, q) is !p & q.
+        for y in 0..5 {
+            for x in 0..5 {
+                a[x + 5 * y] = _mm256_xor_si256(
+                    b[x + 5 * y],
+                    _mm256_andnot_si256(b[(x + 1) % 5 + 5 * y], b[(x + 2) % 5 + 5 * y]),
+                );
+            }
+        }
+        // ι
+        a[0] = _mm256_xor_si256(a[0], _mm256_set1_epi64x(rc as i64));
+    }
+    for (w, lane) in a.iter().enumerate() {
+        states[0][w] = _mm256_extract_epi64::<0>(*lane) as u64;
+        states[1][w] = _mm256_extract_epi64::<1>(*lane) as u64;
+        states[2][w] = _mm256_extract_epi64::<2>(*lane) as u64;
+        states[3][w] = _mm256_extract_epi64::<3>(*lane) as u64;
     }
 }

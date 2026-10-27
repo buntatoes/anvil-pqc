@@ -261,25 +261,74 @@ fn sample_ntt(rho: &[u8; 32], j: u8, i: u8) -> Poly {
     xof.absorb(&[j, i]);
     let mut a = [0u16; N];
     let mut count = 0;
-    let mut buf = [0u8; 168];
+    let mut buf = [0u8; XOF_BLOCK];
     while count < N {
         xof.squeeze(&mut buf);
-        // Three bytes give two 12-bit candidates; 168 is a multiple of 3.
-        for start in (0..buf.len()).step_by(3) {
-            let c = &buf[start..start + 3];
-            let d1 = u16::from(c[0]) | (u16::from(c[1] & 0x0f) << 8);
-            let d2 = u16::from(c[1] >> 4) | (u16::from(c[2]) << 4);
-            if u32::from(d1) < Q && count < N {
-                a[count] = d1;
-                count += 1;
-            }
-            if u32::from(d2) < Q && count < N {
-                a[count] = d2;
-                count += 1;
+        take_candidates(&buf, &mut a, &mut count);
+    }
+    a
+}
+
+/// SHAKE128's rate in bytes, one squeeze block.
+const XOF_BLOCK: usize = 168;
+
+/// The inner loop of Algorithm 7: appends the coefficients below q found in
+/// one XOF block to `a`, stopping when it is full.
+fn take_candidates(buf: &[u8; XOF_BLOCK], a: &mut Poly, count: &mut usize) {
+    // Three bytes give two 12-bit candidates; 168 is a multiple of 3.
+    for c in buf.as_chunks::<3>().0 {
+        let d1 = u16::from(c[0]) | (u16::from(c[1] & 0x0f) << 8);
+        let d2 = u16::from(c[1] >> 4) | (u16::from(c[2]) << 4);
+        if u32::from(d1) < Q && *count < N {
+            a[*count] = d1;
+            *count += 1;
+        }
+        if u32::from(d2) < Q && *count < N {
+            a[*count] = d2;
+            *count += 1;
+        }
+    }
+}
+
+/// Algorithm 7 for four matrix entries at once, with the four SHAKE128
+/// states permuted side by side on AVX2. Gives the same four polynomials as
+/// four calls to `sample_ntt`. Returns false, having written nothing, when
+/// the AVX2 code isn't in use.
+fn sample_ntt_x4(rho: &[u8; 32], which: &[(usize, usize); 4], a: &mut [[Poly; K]; K]) -> bool {
+    // Absorbing rho || j || i is a single padded block (FIPS 202 section
+    // 5.1 with the SHAKE suffix), the same as Sponge::absorb then squeeze.
+    let mut states = [[0u64; 25]; 4];
+    for (state, &(i, j)) in states.iter_mut().zip(which) {
+        let mut block = [0u8; XOF_BLOCK];
+        block[..32].copy_from_slice(rho);
+        block[32] = j as u8;
+        block[33] = i as u8;
+        block[34] ^= 0x1f;
+        block[XOF_BLOCK - 1] ^= 0x80;
+        for (w, b) in state.iter_mut().zip(block.as_chunks::<8>().0) {
+            *w = u64::from_le_bytes(*b);
+        }
+    }
+    let mut polys = [[0u16; N]; 4];
+    let mut counts = [0usize; 4];
+    while counts.iter().any(|&c| c < N) {
+        if !accel::run(Job::KeccakX4(&mut states)) {
+            return false;
+        }
+        for ((state, poly), count) in states.iter().zip(&mut polys).zip(&mut counts) {
+            if *count < N {
+                let mut buf = [0u8; XOF_BLOCK];
+                for (b, w) in buf.as_chunks_mut::<8>().0.iter_mut().zip(state) {
+                    *b = w.to_le_bytes();
+                }
+                take_candidates(&buf, poly, count);
             }
         }
     }
-    a
+    for (&(i, j), poly) in which.iter().zip(&polys) {
+        a[i][j] = *poly;
+    }
+    true
 }
 
 /// Algorithm 8, SamplePolyCBD_eta, for eta = 2 (64 * eta = 128 bytes in).
@@ -305,10 +354,22 @@ fn prf_eta2(s: &[u8; 32], b: u8) -> [u8; 128] {
 
 fn expand_matrix(rho: &[u8; 32]) -> [[Poly; K]; K] {
     let mut a = [[[0u16; N]; K]; K];
-    for (i, row) in a.iter_mut().enumerate() {
-        for (j, entry) in row.iter_mut().enumerate() {
-            *entry = sample_ntt(rho, j as u8, i as u8);
+    // Entries (i, j) in row order; the first eight go four at a time when
+    // the AVX2 code is in use.
+    let mut quads = [[(0, 0); 4]; 2];
+    for n in 0..8 {
+        quads[n / 4][n % 4] = (n / K, n % K);
+    }
+    let mut done = 0;
+    for quad in &quads {
+        if !sample_ntt_x4(rho, quad, &mut a) {
+            break;
         }
+        done += 4;
+    }
+    for n in done..K * K {
+        let (i, j) = (n / K, n % K);
+        a[i][j] = sample_ntt(rho, j as u8, i as u8);
     }
     a
 }
@@ -856,6 +917,40 @@ mod tests {
             accel::run(Job::PolySub(f, g, &mut got));
             assert_eq!(got, want);
         }
+    }
+
+    #[test]
+    fn four_way_sampling_matches_sample_ntt() {
+        let mut rng = XorShift(7);
+        let mut checked = 0;
+        for round in 0..2_000 {
+            let mut rho = [0u8; 32];
+            for b in rho.iter_mut() {
+                *b = rng.next() as u8;
+            }
+            if round == 0 {
+                rho = [0xff; 32];
+            }
+            let mut want = [[[0u16; N]; K]; K];
+            for (i, row) in want.iter_mut().enumerate() {
+                for (j, p) in row.iter_mut().enumerate() {
+                    *p = sample_ntt(&rho, j as u8, i as u8);
+                }
+            }
+            let mut got = [[[0u16; N]; K]; K];
+            let quad = [(0, 0), (2, 1), (1, 2), (2, 2)];
+            if !sample_ntt_x4(&rho, &quad, &mut got) {
+                eprintln!("no AVX2 on this CPU: four-way sampling not checked");
+                return;
+            }
+            for &(i, j) in &quad {
+                assert_eq!(got[i][j], want[i][j]);
+            }
+            assert_eq!(expand_matrix(&rho), want);
+            assert_eq!(accel::portable_only(|| expand_matrix(&rho)), want);
+            checked += 1;
+        }
+        assert_eq!(checked, 2_000);
     }
 
     #[test]

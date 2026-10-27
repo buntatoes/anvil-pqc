@@ -8,7 +8,7 @@
 //! section 3.2 when the crate is compiled, so no table is typed in by hand.
 
 /// Rotation offsets for ρ, from FIPS 202 Algorithm 2.
-const RHO: [u32; 25] = {
+pub(crate) const RHO: [u32; 25] = {
     let mut out = [0u32; 25];
     let (mut x, mut y) = (1usize, 0usize);
     let mut t = 0usize;
@@ -45,7 +45,7 @@ const fn rc(t: usize) -> u64 {
 }
 
 /// Round constants for the 24 rounds of Keccak-p[1600, 24], FIPS 202 Algorithm 6.
-const ROUND_CONSTANTS: [u64; 24] = {
+pub(crate) const ROUND_CONSTANTS: [u64; 24] = {
     let mut out = [0u64; 24];
     let mut ir = 0;
     while ir < 24 {
@@ -284,5 +284,43 @@ mod tests {
         b.squeeze(&mut two[3..200]);
         b.squeeze(&mut two[200..]);
         assert_eq!(one, two);
+    }
+
+    /// The AVX2 four-state permutation against four portable ones.
+    #[test]
+    fn four_way_permutation_matches_portable() {
+        use crate::accel::{self, Job};
+        let mut x = 0x0123_4567_89ab_cdefu64;
+        let mut next = || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        for round in 0..5_000 {
+            let mut states = [[0u64; 25]; 4];
+            for s in states.iter_mut() {
+                for w in s.iter_mut() {
+                    *w = next();
+                }
+            }
+            if round == 0 {
+                states = [
+                    [0; 25],
+                    [u64::MAX; 25],
+                    [1; 25],
+                    [0x8000_0000_0000_0000; 25],
+                ];
+            }
+            let mut want = states;
+            for s in want.iter_mut() {
+                keccak_f1600(s);
+            }
+            if !accel::run(Job::KeccakX4(&mut states)) {
+                eprintln!("no AVX2 on this CPU: four-way permutation not checked");
+                return;
+            }
+            assert_eq!(states, want);
+        }
     }
 }

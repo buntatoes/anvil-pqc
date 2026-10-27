@@ -4,7 +4,8 @@
 //!
 //! The portable code is the default and the reference. On x86_64 CPUs that
 //! have AVX2, the hot loops of ML-KEM (the NTT, its inverse, multiplication
-//! in the NTT domain, polynomial addition and subtraction) run on AVX2
+//! in the NTT domain, polynomial addition and subtraction) and four Keccak
+//! permutations side by side for SHAKE128 matrix sampling run on AVX2
 //! instead. The results are the same bytes either way; the tests compare the
 //! two paths directly. Without AVX2, or on other CPUs, everything runs on
 //! the portable code and nothing is reported, because nothing is lost.
@@ -28,6 +29,8 @@ pub(crate) enum Job<'a> {
     PolyAdd(&'a mut Poly, &'a Poly),
     /// `out = a - b`.
     PolySub(&'a Poly, &'a Poly, &'a mut Poly),
+    /// Keccak-p[1600, 24] on four separate states.
+    KeccakX4(&'a mut [[u64; 25]; 4]),
 }
 
 thread_local! {
