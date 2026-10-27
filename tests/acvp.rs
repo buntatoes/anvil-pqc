@@ -2,7 +2,11 @@
 // Copyright (c) 2026 Buntato
 //! NIST ACVP vectors for ML-KEM-768. See tests/data/acvp-mlkem768.txt for
 //! where they come from.
+//!
+//! Each check runs twice: on whatever this CPU uses (AVX2 where it has it)
+//! and with the portable code forced.
 
+use anvil_pqc::accel::{avx2_active, portable_only};
 use anvil_pqc::keccak::sha3_256;
 use anvil_pqc::mlkem::{DecapsulationKey, EncapsulationKey, keygen_from_seed};
 use std::collections::HashMap;
@@ -38,8 +42,7 @@ fn of_kind(kind: &str) -> Vec<HashMap<String, String>> {
     cases().into_iter().filter(|c| c["kind"] == kind).collect()
 }
 
-#[test]
-fn key_generation() {
+fn check_key_generation() {
     let cases = of_kind("keygen");
     assert_eq!(cases.len(), 25);
     for c in cases {
@@ -62,8 +65,7 @@ fn key_generation() {
     }
 }
 
-#[test]
-fn encapsulation() {
+fn check_encapsulation() {
     let cases = of_kind("encap");
     assert!(!cases.is_empty());
     for c in cases {
@@ -75,8 +77,7 @@ fn encapsulation() {
     }
 }
 
-#[test]
-fn decapsulation_including_implicit_rejection() {
+fn check_decapsulation_including_implicit_rejection() {
     let cases = of_kind("decap");
     let rejected = cases
         .iter()
@@ -96,18 +97,81 @@ fn decapsulation_including_implicit_rejection() {
     }
 }
 
-#[test]
-fn encapsulation_key_check() {
+fn check_encapsulation_key_check() {
     for c in of_kind("ek_check") {
         let ok = EncapsulationKey::from_bytes(&unhex(&c["ek"])).is_ok();
         assert_eq!(ok, c["pass"] == "true", "tc {} ({})", c["tc"], c["reason"]);
     }
 }
 
-#[test]
-fn decapsulation_key_check() {
+fn check_decapsulation_key_check() {
     for c in of_kind("dk_check") {
         let ok = DecapsulationKey::from_bytes(&unhex(&c["dk"])).is_ok();
         assert_eq!(ok, c["pass"] == "true", "tc {} ({})", c["tc"], c["reason"]);
     }
+}
+
+#[test]
+fn key_generation() {
+    check_key_generation();
+}
+
+#[test]
+fn key_generation_portable() {
+    portable_only(|| {
+        assert!(!avx2_active());
+        check_key_generation();
+    });
+}
+
+#[test]
+fn encapsulation() {
+    check_encapsulation();
+}
+
+#[test]
+fn encapsulation_portable() {
+    portable_only(|| {
+        assert!(!avx2_active());
+        check_encapsulation();
+    });
+}
+
+#[test]
+fn decapsulation_including_implicit_rejection() {
+    check_decapsulation_including_implicit_rejection();
+}
+
+#[test]
+fn decapsulation_including_implicit_rejection_portable() {
+    portable_only(|| {
+        assert!(!avx2_active());
+        check_decapsulation_including_implicit_rejection();
+    });
+}
+
+#[test]
+fn encapsulation_key_check() {
+    check_encapsulation_key_check();
+}
+
+#[test]
+fn encapsulation_key_check_portable() {
+    portable_only(|| {
+        assert!(!avx2_active());
+        check_encapsulation_key_check();
+    });
+}
+
+#[test]
+fn decapsulation_key_check() {
+    check_decapsulation_key_check();
+}
+
+#[test]
+fn decapsulation_key_check_portable() {
+    portable_only(|| {
+        assert!(!avx2_active());
+        check_decapsulation_key_check();
+    });
 }
