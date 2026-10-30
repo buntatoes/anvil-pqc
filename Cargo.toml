@@ -1,6 +1,7 @@
 # Post-quantum key exchange: ML-KEM-768 (FIPS 203), X25519 (RFC 7748), and
 # the X25519MLKEM768 hybrid used in TLS 1.3. SHA-3 and SHAKE (FIPS 202) are
-# built in. Not used by anvil-browser yet; see the README.
+# built in. Used by anvil-net for X25519MLKEM768 TLS 1.3 key shares/self-test
+# and sha3-256- Subresource Integrity checks.
 
 [package]
 name = "anvil-pqc"
