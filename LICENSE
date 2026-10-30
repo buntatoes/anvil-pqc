@@ -8,8 +8,8 @@ PART I: DUAL LICENSING & NON-COMPETE TERMS
 
 This software and all associated source code, shaders, scripts, build tooling,
 and documentation in the Anvil Browser ecosystem (`anvil-browser`,
-`anvil-engine`, `anvil-cipher`, `anvil-compress`, `anvil-css`, `anvil-gpu`,
-`anvil-hpack`, `anvil-image`, `anvil-js`, `anvil-json`, `anvil-pqc`,
+`anvil-engine` / Forge, `Cinder`, `Prism`, `anvil-cipher`, `anvil-compress`,
+`anvil-gpu`, `anvil-hpack`, `anvil-image`, `anvil-json`, `anvil-pqc`,
 `anvil-ttf`, and `anvil-video`) are copyright (c) 2026 Buntato and are made
 available under a Dual License model:
 
@@ -49,11 +49,11 @@ available under a Dual License model:
        or distributed as a competing engine component.
 
 4. TRADEMARKS & AUTHORSHIP:
-   The names "Anvil", "Anvil Browser", "Anvil Engine", "AnvilVM", and associated
-   logos/marks are the exclusive property of Buntato and are not licensed for
-   use on any third-party or derivative product. All copies and permitted
-   distributions must retain the copyright notice "Copyright (c) 2026 Buntato"
-   and a complete copy of this LICENSE file.
+   The names "Anvil", "Anvil Browser", "Forge", "Cinder", "Prism", and
+   associated logos/marks are the exclusive property of Buntato and are not
+   licensed for use on any third-party or derivative product. All copies and
+   permitted distributions must retain the copyright notice "Copyright (c) 2026
+   Buntato" and a complete copy of this LICENSE file.
 
 ================================================================================
 PART II: NONCOMMERCIAL TERMS (BASED ON POLYFORM NONCOMMERCIAL LICENSE 1.0.0)
@@ -174,3 +174,24 @@ otherwise. Control can be direct or indirect.
 these terms.
 
 **Use** means anything you do with the software requiring one of your licenses.
+
+================================================================================
+PART III: THIRD-PARTY OPEN-SOURCE COMPONENT NOTICE (adblock-rust, MPL-2.0)
+================================================================================
+
+`anvil-browser` (`crates/anvil-net` and `crates/anvil-browser`) links Brave
+Browser's unmodified open-source `adblock-rust` library (`adblock` v0.13.3):
+
+  Component:  adblock-rust (`adblock` crate)
+  Source:     https://github.com/brave/adblock-rust
+  Copyright:  Copyright (c) Brave Software, Inc. and contributors
+  License:    Mozilla Public License 2.0 (MPL-2.0)
+              https://mozilla.org/MPL/2.0/
+
+In accordance with Section 3.3 of the Mozilla Public License 2.0 ("Distribution
+of a Larger Work"), `adblock-rust` is linked without modification and remains
+licensed under the Mozilla Public License 2.0 (MPL-2.0), with its complete
+corresponding source code available at https://github.com/brave/adblock-rust.
+All original Anvil Browser source code, `anvil-engine` (Forge), `Cinder`,
+`Prism`, and the nine `anvil-*` companion libraries remain governed by Part I
+and Part II of this Anvil Ecosystem Dual License.
