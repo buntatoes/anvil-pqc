@@ -1,3 +1,5 @@
-/target
-Cargo.lock
-.vs
+/anvil-pqc
+/anvil-pqc.exe
+*.exe
+*.out
+*.test
